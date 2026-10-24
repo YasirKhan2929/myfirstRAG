@@ -4,10 +4,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-
-# Initial threshold for this small demonstration.
-# We'll evaluate and tune it later.
-MIN_SIMILARITY = 0.30
+MIN_SIMILARITY = 0.25
 
 UNKNOWN_ANSWER = "I don't know based on the available information."
 
@@ -18,15 +15,27 @@ class Generator:
     def __init__(self):
         print("Loading the Qwen language model...")
 
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        print(f"Using device: {self.device}")
+
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+        # Load directly onto a real device instead of using device_map="auto".
+        model_dtype = (
+            torch.float16 if self.device.type == "cuda"
+            else torch.float32
+        )
 
         self.model = AutoModelForCausalLM.from_pretrained(
             MODEL_NAME,
-            torch_dtype="auto",
-            device_map="auto",
+            torch_dtype=model_dtype,
         )
 
+        self.model.to(self.device)
         self.model.eval()
+
         print("Qwen model loaded successfully.")
 
     def answer(self, question, retrieved_chunks):
@@ -35,7 +44,6 @@ class Generator:
         if not retrieved_chunks:
             return UNKNOWN_ANSWER
 
-        # Check whether the best retrieved chunk is relevant enough.
         best_score = max(
             result["score"] for result in retrieved_chunks
         )
@@ -52,14 +60,11 @@ class Generator:
                 "role": "system",
                 "content": (
                     "You are a helpful store assistant. "
-                    "Answer questions using only the supplied context. "
-                    "The context may not contain the answer. "
-                    "If the answer is not explicitly supported by the "
-                    "context, reply exactly: "
-                    "'I don't know based on the available information.' "
-                    "Never guess, infer unsupported facts, or answer "
-                    "yes or no without evidence. "
-                    "Keep supported answers brief."
+                    "Answer using only the supplied context. "
+                    "If the answer is not supported by the context, "
+                    "reply exactly: "
+                    "I don't know based on the available information. "
+                    "Never guess or invent facts. Keep answers brief."
                 ),
             },
             {
@@ -67,7 +72,7 @@ class Generator:
                 "content": (
                     f"Context:\n{context}\n\n"
                     f"Question: {question}\n\n"
-                    "Answer briefly using only the context."
+                    "Answer using only the context."
                 ),
             },
         ]
@@ -81,13 +86,14 @@ class Generator:
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
-        ).to(self.model.device)
+        ).to(self.device)
 
         with torch.no_grad():
             output = self.model.generate(
                 **inputs,
                 max_new_tokens=80,
                 do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id,
             )
 
         new_tokens = output[0][inputs["input_ids"].shape[1]:]
