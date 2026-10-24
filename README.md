@@ -117,11 +117,10 @@ The chatbot should not invent a store address or shipping policy that is absent 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/myfirstRAG.git
+git clone https://github.com/YasirKhan2929/myfirstRAG.git
 cd myfirstRAG
 ```
 
-Replace `YOUR-USERNAME` with your GitHub username.
 
 ### 2. Create a virtual environment
 
